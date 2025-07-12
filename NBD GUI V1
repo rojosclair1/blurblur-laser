@@ -1,0 +1,226 @@
+-- Services
+local Players = game:GetService("Players")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+-- Settings
+local TOGGLE_KEY = Enum.KeyCode.P
+local SHUTDOWN_KEY = nil
+local LASER_WIDTH = 0.05
+
+-- Player
+local localPlayer = Players.LocalPlayer
+
+-- It's recommended to bundle required modules with your script instead of using loadstring.
+-- loadstring can be a security risk and relies on external services.
+local library = require(script:WaitForChild("ErisModularGuiV2"))
+
+local Style = {
+	name = "Lazer GUI Modified: by Rojos",
+	size = UDim2.new(0, 600, 0, 400),
+	primaryColor = Color3.new(0.615686, 0.47451, 0.305882),
+	secondaryColor = Color3.new(0.670588, 0.584314, 0.388235),
+	backgroundColor = Color3.new(0, 0, 0),
+	draggable = true,
+	centered = false,
+	freemouse = true,
+	maxPages = 1,
+	barY = 20,
+	startMinimized = false,
+	toggleBind = TOGGLE_KEY,
+}
+
+local window = library:Initialize(Style)
+
+if SHUTDOWN_KEY then
+	UserInputService.InputBegan:Connect(function(key)
+		if key.KeyCode == SHUTDOWN_KEY then
+			window:Destroy()
+		end
+	end)
+end
+
+-- Functions and Laser Management
+local laserContainer = Instance.new("Folder")
+laserContainer.Name = "LasersContainer"
+laserContainer.Parent = Workspace
+
+local activeLasers = {}
+local useRaycastLaser = true
+
+local function addLaser(attachment: Attachment)
+	if not attachment or not attachment:IsA("Attachment") then
+		return
+	end
+
+	-- Avoid creating duplicate lasers for the same attachment
+	for _, laserData in activeLasers do
+		if laserData.attachment == attachment then
+			return
+		end
+	end
+
+	local laserPart = Instance.new("Part")
+	laserPart.Name = "Laser"
+	laserPart.Parent = laserContainer
+	laserPart.Anchored = true
+	laserPart.CanCollide = false
+	laserPart.CastShadow = false
+	laserPart.Material = Enum.Material.Neon
+	laserPart.Color = Color3.fromRGB(255, 0, 0)
+
+	table.insert(activeLasers, {
+		part = laserPart,
+		attachment = attachment,
+	})
+end
+
+-- Single loop to update all lasers for better performance
+RunService.Heartbeat:Connect(function(dt)
+	local character = localPlayer.Character
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.IgnoreWater = true
+
+	for i = #activeLasers, 1, -1 do
+		local laserData = activeLasers[i]
+		local attachment = laserData.attachment
+		local laserPart = laserData.part
+
+		-- Cleanup if attachment or part is gone
+		if not (attachment and attachment.Parent and laserPart and laserPart.Parent) then
+			if laserPart and laserPart.Parent then
+				laserPart:Destroy()
+			end
+			table.remove(activeLasers, i)
+			continue
+		end
+
+		if useRaycastLaser then
+			local startPos = attachment.WorldCFrame.Position
+			local direction = attachment.WorldCFrame.LookVector * 5000
+			
+			local filterInstances = {attachment.Parent.Parent, laserPart}
+			if character then
+				table.insert(filterInstances, character)
+			end
+			raycastParams.FilterDescendantsInstances = filterInstances
+
+			local raycastResult = Workspace:Raycast(startPos, direction, raycastParams)
+
+			local endPos = raycastResult and raycastResult.Position or (startPos + direction)
+			local laserLength = (endPos - startPos).Magnitude
+			
+			laserPart.Size = Vector3.new(LASER_WIDTH, LASER_WIDTH, laserLength)
+			laserPart.CFrame = CFrame.new(startPos, endPos) * CFrame.new(0, 0, -laserLength / 2)
+		else
+			-- Non-raycast mode
+			laserPart.Size = Vector3.new(LASER_WIDTH, LASER_WIDTH, 1000)
+			-- Position the laser to start at the attachment and point forward
+			laserPart.CFrame = attachment.WorldCFrame * CFrame.new(0, 0, -laserPart.Size.Z / 2)
+		end
+	end
+end)
+
+-- Buttons
+local lazerModule = window:createNewModule("Lazers")
+
+local jjxenoFix, jjxenoFixToggled = lazerModule:AddToggle("JJ/Xeno lazer fix")
+jjxenoFix.Activated:Connect(function()
+	-- Toggling switches between raycast and non-raycast laser types
+	useRaycastLaser = not jjxenoFixToggled:GetState()
+end)
+
+-- Configuration for weapon buttons to reduce code repetition
+local weaponConfigs = {
+	{button = "Pistol Lazers", names = {"Pistol", "Snub", "TheFix"}},
+	{button = "Kick-10 Lazers", names = {"ToolboxMAC10", "Kick", "Kick10"}},
+	{button = "Ruby '52 Lazers", names = {"Ruby", "DMR", "M14"}},
+	{button = "Ural-79 Lazers", names = {"AK47", "Ural", "Ural79"}},
+	{button = "Carcosa Rifle Lazers", names = {"Sniper"}},
+	{button = "Ace Lazers", names = {"AceCarbine"}},
+	{button = "Magnum Lazers", names = {"MAGNUM"}},
+}
+
+-- Create buttons from the configuration table
+for _, config in weaponConfigs do
+	local button = lazerModule:AddButton(config.button)
+	button.Activated:Connect(function()
+		for _, g in Workspace:GetChildren() do
+			if table.find(config.names, g.Name) then
+				local muzzle = g:FindFirstChild("Root") and g.Root:FindFirstChild("Muzzle")
+				if muzzle then
+					addLaser(muzzle)
+				end
+			end
+		end
+	end)
+end
+
+-- All Lazers button with a comprehensive list
+local allWeaponNames = {
+	"Snub", "Pistol", "DB", "AK47", "ToolboxMAC10", "PitchGun", "Sniper", 
+	"AceCarbine", "MAGNUM", "Ruby", "TheFix", "Jericho", "MG", "MachineGun", 
+	"M14", "Kick", "Kick10", "Mac10", "Ural79", "Forte", "Deagle"
+}
+
+local allLazersButton = lazerModule:AddButton("All Lazers")
+allLazersButton.Activated:Connect(function()
+	for _, g in Workspace:GetChildren() do
+		if table.find(allWeaponNames, g.Name) then
+			local muzzle = g:FindFirstChild("Root") and g.Root:FindFirstChild("Muzzle")
+			if muzzle then
+				addLaser(muzzle)
+			end
+		end
+	end
+end)
+
+-- Highlight Disks button
+local highlightDisksButton = lazerModule:AddButton("Highlight Disks")
+highlightDisksButton.Activated:Connect(function()
+	for _, item in Workspace:GetChildren() do
+		if item:IsA("Model") and item.Name == "Disk" then
+			local highlight = item:FindFirstChildOfClass("Highlight")
+			if highlight then
+				highlight:Destroy()
+			else
+				local newHighlight = Instance.new("Highlight")
+				newHighlight.FillColor = Color3.fromRGB(255, 255, 0) -- Yellow
+				newHighlight.OutlineColor = Color3.fromRGB(0, 0, 0)
+				newHighlight.Parent = item
+			end
+		end
+	end
+end)
+
+-- Highlight Items button
+local itemsToHighlight = {"Cash", "FakeCash", "Grenade"}
+local highlightItemsButton = lazerModule:AddButton("Highlight Items")
+highlightItemsButton.Activated:Connect(function()
+	for _, item in Workspace:GetChildren() do
+		if item:IsA("Model") and table.find(itemsToHighlight, item.Name) then
+			local highlight = item:FindFirstChildOfClass("Highlight")
+			if highlight then
+				highlight:Destroy()
+			else
+				local newHighlight = Instance.new("Highlight")
+				newHighlight.FillColor = Color3.fromRGB(0, 255, 0) -- Green for valuables
+				newHighlight.OutlineColor = Color3.fromRGB(0, 0, 0)
+				newHighlight.Parent = item
+			end
+		end
+	end
+end)
+
+-- Remove VC Warning button
+local removeVCWarningButton = lazerModule:AddButton("Remove VC Warning")
+removeVCWarningButton.Activated:Connect(function()
+	local vcWarning = ReplicatedFirst:FindFirstChild("VCWarning")
+	if vcWarning then
+		vcWarning:Destroy()
+	end
+end)
+
